@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Release version (e.g., v0.1.0)'
+        description: "Release version (e.g., v0.1.0)"
         required: true
       release_notes:
-        description: 'Additional release notes'
+        description: "Additional release notes"
         required: false
-        default: ''
+        default: ""
 
 jobs:
   build-and-test:
@@ -31,66 +31,66 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             python-version: "3.13"
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-    - name: Install additional targets for universal2 build
-      if: ${{ matrix.target == 'aarch64-apple-darwin' && matrix.os == 'macos-latest' }}
-      run: rustup target add x86_64-apple-darwin
+      - name: Install additional targets for universal2 build
+        if: ${{ matrix.target == 'aarch64-apple-darwin' && matrix.os == 'macos-latest' }}
+        run: rustup target add x86_64-apple-darwin
 
-    - name: Update version
-      run: |
-        VERSION="${{ github.event.inputs.release_version }}"
-        VERSION="${VERSION#v}"
-        echo "New version: $VERSION"
-    
-        sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
-        sed -i.bak "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
-    
-        cargo generate-lockfile
-      shell: bash
+      - name: Update version
+        run: |
+          VERSION="${{ github.event.inputs.release_version }}"
+          VERSION="${VERSION#v}"
+          echo "New version: $VERSION"
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install maturin build wheel
+          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+          sed -i.bak "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
 
-    - name: Build package
-      run: |
-        if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" && "${{ matrix.os }}" == "macos-latest" ]]; then
-          maturin build --release --target universal2-apple-darwin
-        else
-          maturin build --release --target ${{ matrix.target }}
-        fi
-      env:
-        MACOSX_DEPLOYMENT_TARGET: '10.14'
+          cargo generate-lockfile
+        shell: bash
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: wheels-${{ matrix.os }}-${{ matrix.target }}
-        path: target/wheels/*.whl
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install maturin build wheel
 
-    - name: Upload version files
-      if: ${{ matrix.os == 'ubuntu-24.04' && matrix.target == 'x86_64-unknown-linux-gnu' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: version-files
-        path: |
-          pyproject.toml
-          Cargo.toml
+      - name: Build package
+        run: |
+          if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" && "${{ matrix.os }}" == "macos-latest" ]]; then
+            maturin build --release --target universal2-apple-darwin
+          else
+            maturin build --release --target ${{ matrix.target }}
+          fi
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "10.14"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: target/wheels/*.whl
+
+      - name: Upload version files
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.target == 'x86_64-unknown-linux-gnu' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-files
+          path: |
+            pyproject.toml
+            Cargo.toml
 
   commit-version:
     name: Commit version changes
@@ -98,29 +98,29 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Download version files
-      uses: actions/download-artifact@v4
-      with:
-        name: version-files
-    
-    - name: Commit version changes
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add pyproject.toml Cargo.toml Cargo.lock
-        # Check if there are any changes to commit
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "chore: bump version to ${{ github.event.inputs.release_version }}"
-          git push
-        fi
-      shell: bash
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download version files
+        uses: actions/download-artifact@v4
+        with:
+          name: version-files
+
+      - name: Commit version changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add pyproject.toml Cargo.toml Cargo.lock
+          # Check if there are any changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: bump version to ${{ github.event.inputs.release_version }}"
+            git push
+          fi
+        shell: bash
 
   create-release:
     name: Create GitHub Release
@@ -129,72 +129,72 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Get previous tag
-      id: previoustag
-      uses: WyriHaximus/github-action-get-previous-tag@v1
-      with:
-        fallback: v0.0.0
-      continue-on-error: true
+      - name: Get previous tag
+        id: previoustag
+        uses: WyriHaximus/github-action-get-previous-tag@v1
+        with:
+          fallback: v0.0.0
+        continue-on-error: true
 
-    - name: Generate changelog
-      id: changelog
-      uses: metcalfc/changelog-generator@v4.6.2
-      with:
-        myToken: ${{ secrets.GITHUB_TOKEN }}
-        head-ref: main
-        base-ref: ${{ steps.previoustag.outputs.tag }}
+      - name: Generate changelog
+        id: changelog
+        uses: metcalfc/changelog-generator@v4.6.2
+        with:
+          myToken: ${{ secrets.GITHUB_TOKEN }}
+          head-ref: main
+          base-ref: ${{ steps.previoustag.outputs.tag }}
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: wheels
-        merge-multiple: true
-        pattern: wheels-*
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+          pattern: wheels-*
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        name: Release ${{ github.event.inputs.release_version }}
-        tag_name: ${{ github.event.inputs.release_version }}
-        body: |
-          ## Release ${{ github.event.inputs.release_version }}
-          
-          ### Changes since ${{ steps.previoustag.outputs.tag }}:
-          ${{ steps.changelog.outputs.changelog }}
-          
-          ### Additional Notes:
-          ${{ github.event.inputs.release_notes }}
-        files: wheels/*.whl
-        draft: false
-        prerelease: false
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.event.inputs.release_version }}
+          tag_name: ${{ github.event.inputs.release_version }}
+          body: |
+            ## Release ${{ github.event.inputs.release_version }}
+
+            ### Changes since ${{ steps.previoustag.outputs.tag }}:
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### Additional Notes:
+            ${{ github.event.inputs.release_notes }}
+          files: wheels/*.whl
+          draft: false
+          prerelease: false
 
   publish-to-pypi:
     name: Publish to PyPI
     needs: [build-and-test, create-release]
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # IMPORTANT: needed for trusted publishing to PyPI
-    
+      id-token: write
+
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: wheels
-        merge-multiple: true
-        pattern: wheels-*
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+          pattern: wheels-*
 
-    - name: Display structure of downloaded files
-      run: ls -R wheels
+      - name: Display structure of downloaded files
+        run: ls -R wheels
 
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        packages-dir: wheels
-        skip-existing: true
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheels
+          skip-existing: true
