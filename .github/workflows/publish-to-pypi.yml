@@ -1,0 +1,199 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g., v0.1.0)'
+        required: true
+      release_notes:
+        description: 'Additional release notes'
+        required: false
+        default: ''
+
+jobs:
+  build-and-test:
+    name: Build and test wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            python-version: "3.13"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            python-version: "3.13"
+          - os: macos-13
+            target: x86_64-apple-darwin
+            python-version: "3.13"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            python-version: "3.13"
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Install additional targets for universal2 build
+      if: ${{ matrix.target == 'aarch64-apple-darwin' && matrix.os == 'macos-latest' }}
+      run: rustup target add x86_64-apple-darwin
+
+    - name: Update version in pyproject.toml and Cargo.toml
+      run: |
+        # Remove 'v' prefix if present
+        VERSION="${{ github.event.inputs.release_version }}"
+        VERSION="${VERSION#v}"
+        
+        # Update version in pyproject.toml
+        sed -i.bak "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
+        
+        # Update version in Cargo.toml
+        sed -i.bak "0,/version = \"[^\"]*\"/s//version = \"$VERSION\"/" Cargo.toml
+      shell: bash
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install maturin build wheel
+
+    - name: Build package
+      run: |
+        if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" && "${{ matrix.os }}" == "macos-latest" ]]; then
+          maturin build --release --target universal2-apple-darwin
+        else
+          maturin build --release --target ${{ matrix.target }}
+        fi
+      env:
+        MACOSX_DEPLOYMENT_TARGET: '10.14'
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.os }}-${{ matrix.target }}
+        path: target/wheels/*.whl
+
+    - name: Upload version files
+      if: ${{ matrix.os == 'ubuntu-24.04' && matrix.target == 'x86_64-unknown-linux-gnu' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: version-files
+        path: |
+          pyproject.toml
+          Cargo.toml
+
+  commit-version:
+    name: Commit version changes
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Download version files
+      uses: actions/download-artifact@v4
+      with:
+        name: version-files
+    
+    - name: Commit version changes
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add pyproject.toml Cargo.toml
+        # Check if there are any changes to commit
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "chore: bump version to ${{ github.event.inputs.release_version }}"
+          git push
+        fi
+      shell: bash
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-and-test, commit-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get previous tag
+      id: previoustag
+      uses: WyriHaximus/github-action-get-previous-tag@v1
+      with:
+        fallback: v0.0.0
+      continue-on-error: true
+
+    - name: Generate changelog
+      id: changelog
+      uses: metcalfc/changelog-generator@v4.6.2
+      with:
+        myToken: ${{ secrets.GITHUB_TOKEN }}
+        head-ref: ${{ github.event.inputs.release_version }}
+        base-ref: ${{ steps.previoustag.outputs.tag }}
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: wheels
+        merge-multiple: true
+        pattern: wheels-*
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ github.event.inputs.release_version }}
+        tag_name: ${{ github.event.inputs.release_version }}
+        body: |
+          ## Release ${{ github.event.inputs.release_version }}
+          
+          ### Changes since ${{ steps.previoustag.outputs.tag }}:
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ### Additional Notes:
+          ${{ github.event.inputs.release_notes }}
+        files: wheels/*.whl
+        draft: false
+        prerelease: false
+
+  publish-to-pypi:
+    name: Publish to PyPI
+    needs: [build-and-test, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # IMPORTANT: needed for trusted publishing to PyPI
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: wheels
+        merge-multiple: true
+        pattern: wheels-*
+
+    - name: Display structure of downloaded files
+      run: ls -R wheels
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: wheels
+        skip-existing: true
