@@ -114,11 +114,14 @@ jobs:
         with:
           name: version-files
 
+      - name: Print diff
+        run: git diff
+
       - name: Commit version changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add pyproject.toml Cargo.toml Cargo.lock
+          git add pyproject.toml Cargo.toml Cargo.lock uv.lock
           # Check if there are any changes to commit
           if git diff --staged --quiet; then
             echo "No changes to commit"
