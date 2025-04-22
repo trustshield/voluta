@@ -61,6 +61,11 @@ jobs:
         
         # Update version in Cargo.toml
         sed -i.bak "0,/version = \"[^\"]*\"/s//version = \"$VERSION\"/" Cargo.toml
+        
+        # Update version in Cargo.lock
+        if [ -f "Cargo.lock" ]; then
+          sed -i.bak '/\[\[package\]\]\nname = "voluta"/,/^\[/ s/^version = "[^"]*"/version = "'$VERSION'"/' Cargo.lock
+        fi
       shell: bash
 
     - name: Install build dependencies
@@ -113,7 +118,7 @@ jobs:
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        git add pyproject.toml Cargo.toml
+        git add pyproject.toml Cargo.toml Cargo.lock
         # Check if there are any changes to commit
         if git diff --staged --quiet; then
           echo "No changes to commit"
@@ -149,7 +154,7 @@ jobs:
       uses: metcalfc/changelog-generator@v4.6.2
       with:
         myToken: ${{ secrets.GITHUB_TOKEN }}
-        head-ref: ${{ github.event.inputs.release_version }}
+        head-ref: main
         base-ref: ${{ steps.previoustag.outputs.tag }}
 
     - name: Download all artifacts
