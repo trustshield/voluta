@@ -50,22 +50,16 @@ jobs:
       if: ${{ matrix.target == 'aarch64-apple-darwin' && matrix.os == 'macos-latest' }}
       run: rustup target add x86_64-apple-darwin
 
-    - name: Update version in pyproject.toml and Cargo.toml
+    - name: Update version
       run: |
-        # Remove 'v' prefix if present
         VERSION="${{ github.event.inputs.release_version }}"
         VERSION="${VERSION#v}"
-        
-        # Update version in pyproject.toml
-        sed -i.bak "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
-        
-        # Update version in Cargo.toml
-        sed -i.bak "0,/version = \"[^\"]*\"/s//version = \"$VERSION\"/" Cargo.toml
-        
-        # Update version in Cargo.lock
-        if [ -f "Cargo.lock" ]; then
-          sed -i.bak '/\[\[package\]\]\nname = "voluta"/,/^\[/ s/^version = "[^"]*"/version = "'$VERSION'"/' Cargo.lock
-        fi
+        echo "New version: $VERSION"
+    
+        sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+        sed -i.bak "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
+    
+        cargo generate-lockfile
       shell: bash
 
     - name: Install build dependencies
