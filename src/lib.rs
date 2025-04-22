@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, BufRead, Result};
 use std::path::Path;
 use pyo3::prelude::*;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, PatternID};
 use memmap2::Mmap;
 use std::cmp;
 use rayon::prelude::*;
@@ -69,7 +69,13 @@ impl TextMatcher {
     /// Returns a list of (byte_offset, start_index, end_index, matched_pattern) tuples
     pub fn match_file_memmap(&self, path: String, chunk_size: Option<usize>) -> PyResult<Vec<(usize, usize, String)>> {
         match self.match_file_memmap_impl(&path, chunk_size.unwrap_or(8 * 1024 * 1024)) {
-            Ok(res) => Ok(res),
+            Ok(res) => {
+                // Convert the internal pattern indices to actual pattern strings only at the end
+                let string_matches = res.into_iter()
+                    .map(|(start, end, pattern_idx)| (start, end, self.patterns[pattern_idx.as_usize()].clone()))
+                    .collect();
+                Ok(string_matches)
+            },
             Err(e) => Err(pyo3::exceptions::PyIOError::new_err(e.to_string())),
         }
     }
@@ -78,7 +84,13 @@ impl TextMatcher {
     /// Splits the file into chunks and processes them in parallel
     pub fn match_file_memmap_parallel(&self, path: String, chunk_size: Option<usize>, n_threads: Option<usize>) -> PyResult<Vec<(usize, usize, String)>> {
         match self.match_file_memmap_parallel_impl(&path, chunk_size.unwrap_or(8 * 1024 * 1024), n_threads) {
-            Ok(res) => Ok(res),
+            Ok(res) => {
+                // Convert the internal pattern indices to actual pattern strings only at the end
+                let string_matches = res.into_iter()
+                    .map(|(start, end, pattern_idx)| (start, end, self.patterns[pattern_idx.as_usize()].clone()))
+                    .collect();
+                Ok(string_matches)
+            },
             Err(e) => Err(pyo3::exceptions::PyIOError::new_err(e.to_string())),
         }
     }
@@ -96,7 +108,7 @@ impl TextMatcher {
                 let pattern_idx = mat.pattern();
                 let start_idx = mat.start();
                 let end_idx = mat.end();
-                matches.push((start_idx, end_idx, self.patterns[pattern_idx].clone()));
+                matches.push((start_idx, end_idx, self.patterns[pattern_idx.as_usize()].clone()));
             }
         } else {
             // Use the standard iterator
@@ -104,7 +116,7 @@ impl TextMatcher {
                 let pattern_idx = mat.pattern();
                 let start_idx = mat.start();
                 let end_idx = mat.end();
-                matches.push((start_idx, end_idx, self.patterns[pattern_idx].clone()));
+                matches.push((start_idx, end_idx, self.patterns[pattern_idx.as_usize()].clone()));
             }
         }
         
@@ -128,14 +140,14 @@ impl TextMatcher {
                     let pattern_idx = mat.pattern();
                     let start_idx = mat.start();
                     let end_idx = mat.end();
-                    matches.push((line_number, start_idx, end_idx, self.patterns[pattern_idx].clone()));
+                    matches.push((line_number, start_idx, end_idx, self.patterns[pattern_idx.as_usize()].clone()));
                 }
             } else {
                 for mat in self.ac.find_iter(&buffer) {
                     let pattern_idx = mat.pattern();
                     let start_idx = mat.start();
                     let end_idx = mat.end();
-                    matches.push((line_number, start_idx, end_idx, self.patterns[pattern_idx].clone()));
+                    matches.push((line_number, start_idx, end_idx, self.patterns[pattern_idx.as_usize()].clone()));
                 }
             }
             
@@ -145,7 +157,7 @@ impl TextMatcher {
         Ok(matches)
     }
 
-    fn match_file_memmap_impl(&self, path: &str, chunk_size: usize) -> Result<Vec<(usize, usize, String)>> {
+    fn match_file_memmap_impl(&self, path: &str, chunk_size: usize) -> Result<Vec<(usize, usize, PatternID)>> {
         let file = File::open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         let mut matches = Vec::new();
@@ -173,11 +185,10 @@ impl TextMatcher {
                     let pattern_idx = mat.pattern();
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
-                    let pattern = self.patterns[pattern_idx].clone();
                     
                     // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern.clone());
-                    if match_set.insert(match_tuple.clone()) {
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
                         matches.push(match_tuple);
                     }
                 }
@@ -186,11 +197,10 @@ impl TextMatcher {
                     let pattern_idx = mat.pattern();
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
-                    let pattern = self.patterns[pattern_idx].clone();
                     
                     // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern.clone());
-                    if match_set.insert(match_tuple.clone()) {
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
                         matches.push(match_tuple);
                     }
                 }
@@ -210,7 +220,7 @@ impl TextMatcher {
         Ok(matches)
     }
     
-    fn match_file_memmap_parallel_impl(&self, path: &str, chunk_size: usize, n_threads: Option<usize>) -> Result<Vec<(usize, usize, String)>> {
+    fn match_file_memmap_parallel_impl(&self, path: &str, chunk_size: usize, n_threads: Option<usize>) -> Result<Vec<(usize, usize, PatternID)>> {
         // Configure thread pool if specified
         if let Some(threads) = n_threads {
             rayon::ThreadPoolBuilder::new()
@@ -242,46 +252,56 @@ impl TextMatcher {
         }
 
         // Get references to instance fields for the closure
-        let patterns = &self.patterns;
         let ac = &self.ac;
         let overlapping = self.overlapping;
         
-        // Process chunks in parallel and collect all matches
-        let all_matches: Vec<(usize, usize, String)> = chunks.par_iter()
-            .flat_map(|(start, end)| {
+        // Process chunks in parallel and collect all matches with per-thread deduplication
+        // Each thread returns a pre-deduplicated set of matches, which reduces the final deduplication work
+        let thread_local_results: Vec<HashSet<(usize, usize, PatternID)>> = chunks.par_iter()
+            .map(|(start, end)| {
                 let chunk = &mmap[*start..*end];
+                let mut local_match_set = HashSet::new();
                 
                 if overlapping {
-                    ac.find_overlapping_iter(chunk)
-                        .map(|mat| {
-                            let pattern_idx = mat.pattern();
-                            let start_idx = start + mat.start();
-                            let end_idx = start + mat.end();
-                            (start_idx, end_idx, patterns[pattern_idx].clone())
-                        })
-                        .collect::<Vec<_>>()
+                    for mat in ac.find_overlapping_iter(chunk) {
+                        let pattern_idx = mat.pattern();
+                        let start_idx = start + mat.start();
+                        let end_idx = start + mat.end();
+                        
+                        local_match_set.insert((start_idx, end_idx, pattern_idx));
+                    }
                 } else {
-                    ac.find_iter(chunk)
-                        .map(|mat| {
-                            let pattern_idx = mat.pattern();
-                            let start_idx = start + mat.start();
-                            let end_idx = start + mat.end();
-                            (start_idx, end_idx, patterns[pattern_idx].clone())
-                        })
-                        .collect::<Vec<_>>()
+                    for mat in ac.find_iter(chunk) {
+                        let pattern_idx = mat.pattern();
+                        let start_idx = start + mat.start();
+                        let end_idx = start + mat.end();
+                        
+                        local_match_set.insert((start_idx, end_idx, pattern_idx));
+                    }
                 }
+                
+                local_match_set
             })
             .collect();
             
-        // Deduplicate matches found in overlapping regions
-        let mut match_set = HashSet::new();
-        let mut unique_matches = Vec::new();
+        // Merge all thread-local HashSets into a single result
+        let estimated_total_capacity = thread_local_results.iter()
+            .map(|set| set.len())
+            .sum();
+            
+        let mut final_result_set = HashSet::with_capacity(estimated_total_capacity);
         
-        for m in all_matches {
-            if match_set.insert(m.clone()) {
-                unique_matches.push(m);
+        // Fast path: if we only have one thread-local result, just convert it directly
+        if thread_local_results.len() == 1 {
+            final_result_set = thread_local_results.into_iter().next().unwrap();
+        } else {
+            // Merge all thread-local results
+            for local_set in thread_local_results {
+                final_result_set.extend(local_set);
             }
         }
+        
+        let unique_matches = final_result_set.into_iter().collect();
         
         Ok(unique_matches)
     }

@@ -142,6 +142,46 @@ For optimal performance:
 - For files under 100MB, the performance difference may be less noticeable
 - Note that enabling overlapping matches may impact performance
 
+### Metrics
+
+On a MacBook Pro M1 Pro with 16GB RAM:
+
+```bash
+% just stress 1 50 32 8
+python tests/benchmark/stress.py --size 1 --patterns 50 --chunk 32 --threads 8
+Generating 50 random search patterns...
+Generating 1.0GB test file with 50 search patterns...
+Progress: 100% complete
+Created test file at /var/folders/65/6343wbc565jcmgj3mpvktl880000gp/T/tmpl0uwzhss.txt, size: 1.00GB
+Inserted 1024247 pattern instances
+
+Running stress test with 50 patterns:
+  - File size: 1.00GB
+  - Chunk size: 32MB
+  - Threads: 8
+
+Testing memory-mapped matching...
+Memory-mapped matching: 1107062 matches in 4.59 seconds
+Processing speed: 223.13MB/s
+
+Testing parallel memory-mapped matching...
+Parallel memory-mapped matching: 1107062 matches in 0.63 seconds
+Processing speed: 1629.94MB/s
+
+Parallel processing is 7.30x faster than single-threaded
+
+Sample matches:
+  • 'b37lBbWUl4u' found at byte positions 790320349-790320360
+  • 'OsoI' found at byte positions 619636284-619636288
+  • 'KGcWelcw6Awl7d4' found at byte positions 952973106-952973121
+  • 'YlvzcXcF' found at byte positions 481316276-481316284
+  • 'BvK' found at byte positions 909977231-909977234
+
+Stress test completed successfully!
+
+Cleaning up temporary test file: /var/folders/65/6343wbc565jcmgj3mpvktl880000gp/T/tmpl0uwzhss.txt
+```
+
 ## Thanks
 
 This library is a wrapper of [BurntSushi/aho-corasick](https://github.com/BurntSushi/aho-corasick).
