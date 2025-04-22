@@ -115,3 +115,22 @@ class TextMatcher:
             IOError: If the file cannot be read
         """
         ...
+
+    def match_stream(
+        self, stream: bytes, buffer_size: Optional[int] = None
+    ) -> List[Tuple[int, int, str]]:
+        """
+        Stream-based matching from any byte data source.
+        Useful for processing data from network streams, memory buffers, etc.
+
+        Args:
+            stream: Bytes to match against
+            buffer_size: Size of chunks to process (default: 8MB)
+
+        Returns:
+            List of (start_index, end_index, matched_pattern) tuples
+
+        Raises:
+            IOError: If there is an error processing the stream
+        """
+        ...

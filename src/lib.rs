@@ -177,6 +177,29 @@ impl TextMatcher {
             Err(e) => Err(pyo3::exceptions::PyIOError::new_err(e.to_string())),
         }
     }
+
+    /// Stream-based matching from any Read implementer (files, network streams, etc.)
+    /// Returns a list of (byte_offset, start_index, end_index, matched_pattern) tuples
+    #[pyo3(signature = (stream, buffer_size=None))]
+    pub fn match_stream(
+        &self,
+        stream: &[u8],
+        buffer_size: Option<usize>,
+    ) -> PyResult<Vec<(usize, usize, String)>> {
+        match self.match_stream_impl(stream, buffer_size.unwrap_or(8 * 1024 * 1024)) {
+            Ok(res) => {
+                // Convert the internal pattern indices to actual pattern strings only at the end
+                let string_matches = res
+                    .into_iter()
+                    .map(|(start, end, pattern_idx)| {
+                        (start, end, self.patterns[pattern_idx.as_usize()].clone())
+                    })
+                    .collect();
+                Ok(string_matches)
+            }
+            Err(e) => Err(pyo3::exceptions::PyIOError::new_err(e.to_string())),
+        }
+    }
 }
 
 impl TextMatcher {
@@ -452,6 +475,77 @@ impl TextMatcher {
 
             // Move the offset for the next chunk
             offset += bytes_read;
+        }
+
+        Ok(matches)
+    }
+
+    fn match_stream_impl(
+        &self,
+        data: &[u8],
+        buffer_size: usize,
+    ) -> Result<Vec<(usize, usize, PatternID)>> {
+        let mut matches = Vec::new();
+        let mut offset = 0;
+
+        // Use a set to deduplicate matches
+        let mut match_set = HashSet::new();
+
+        // Calculate overlap size based on max pattern length
+        let overlap = self.max_pattern_len.saturating_sub(1);
+
+        // Process data in chunks with overlap
+        for chunk in data.chunks(buffer_size) {
+            // For overlapping patterns, we need to look at the current chunk plus the overlap
+            let search_window = if offset > 0 && chunk.len() > overlap {
+                &data[offset - overlap..offset + chunk.len()]
+            } else {
+                chunk
+            };
+
+            if self.overlapping {
+                for mat in self.ac.find_overlapping_iter(search_window) {
+                    let pattern_idx = mat.pattern();
+                    let start_idx = if offset > 0 && chunk.len() > overlap {
+                        offset - overlap + mat.start()
+                    } else {
+                        offset + mat.start()
+                    };
+                    let end_idx = if offset > 0 && chunk.len() > overlap {
+                        offset - overlap + mat.end()
+                    } else {
+                        offset + mat.end()
+                    };
+
+                    // Insert into set to deduplicate
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
+                        matches.push(match_tuple);
+                    }
+                }
+            } else {
+                for mat in self.ac.find_iter(search_window) {
+                    let pattern_idx = mat.pattern();
+                    let start_idx = if offset > 0 && chunk.len() > overlap {
+                        offset - overlap + mat.start()
+                    } else {
+                        offset + mat.start()
+                    };
+                    let end_idx = if offset > 0 && chunk.len() > overlap {
+                        offset - overlap + mat.end()
+                    } else {
+                        offset + mat.end()
+                    };
+
+                    // Insert into set to deduplicate
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
+                        matches.push(match_tuple);
+                    }
+                }
+            }
+
+            offset += chunk.len();
         }
 
         Ok(matches)
