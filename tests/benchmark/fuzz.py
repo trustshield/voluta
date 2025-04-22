@@ -314,7 +314,7 @@ def test_unicode_data():
 
         # Check positions (this depends on the UTF-8 encoding)
         utf8_data = "안녕하세요 world! こんにちは universe! 你好 everyone!"
-        for start, end, pattern in matches:
+        for _, _, pattern in matches:
             pos = utf8_data.find(pattern)
             assert pos >= 0, f"Pattern '{pattern}' not found in the data"
 
