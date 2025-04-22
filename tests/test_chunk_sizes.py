@@ -39,3 +39,37 @@ def test_chunk_sizes(temp_test_file, search_patterns, chunk_size):
         "time": elapsed,
         "baseline_time": baseline_time,
     }
+
+def test_optional_params(temp_test_file, search_patterns):
+    """Test that optional parameters work correctly for memory-mapped functions."""
+    matcher = voluta.TextMatcher(search_patterns)
+    
+    # Test match_file_memmap with default parameters
+    default_matches = matcher.match_file_memmap(temp_test_file)
+    assert len(default_matches) > 0
+    
+    # Test match_file_memmap_parallel with default parameters
+    parallel_default_matches = matcher.match_file_memmap_parallel(temp_test_file)
+    assert len(parallel_default_matches) > 0
+    
+    # Test match_file_memmap_parallel with custom chunk size
+    custom_chunk_matches = matcher.match_file_memmap_parallel(temp_test_file, chunk_size=1024)
+    assert len(custom_chunk_matches) > 0
+    
+    # Test match_file_memmap_parallel with custom thread count
+    custom_thread_matches = matcher.match_file_memmap_parallel(temp_test_file, n_threads=2)
+    assert len(custom_thread_matches) > 0
+    
+    # Test match_file_memmap_parallel with all parameters
+    all_params_matches = matcher.match_file_memmap_parallel(
+        temp_test_file,
+        chunk_size=1024,
+        n_threads=2
+    )
+    assert len(all_params_matches) > 0
+    
+    # Verify that all methods found the same number of matches
+    assert len(default_matches) == len(parallel_default_matches)
+    assert len(default_matches) == len(custom_chunk_matches)
+    assert len(default_matches) == len(custom_thread_matches)
+    assert len(default_matches) == len(all_params_matches)

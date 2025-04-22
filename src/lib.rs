@@ -67,6 +67,7 @@ impl TextMatcher {
 
     /// Faster file matching using memory mapping for large files
     /// Returns a list of (byte_offset, start_index, end_index, matched_pattern) tuples
+    #[pyo3(signature = (path, chunk_size=None))]
     pub fn match_file_memmap(&self, path: String, chunk_size: Option<usize>) -> PyResult<Vec<(usize, usize, String)>> {
         match self.match_file_memmap_impl(&path, chunk_size.unwrap_or(8 * 1024 * 1024)) {
             Ok(res) => {
@@ -82,6 +83,7 @@ impl TextMatcher {
 
     /// Parallel matching of large files with memory mapping
     /// Splits the file into chunks and processes them in parallel
+    #[pyo3(signature = (path, chunk_size=None, n_threads=None))]
     pub fn match_file_memmap_parallel(&self, path: String, chunk_size: Option<usize>, n_threads: Option<usize>) -> PyResult<Vec<(usize, usize, String)>> {
         match self.match_file_memmap_parallel_impl(&path, chunk_size.unwrap_or(8 * 1024 * 1024), n_threads) {
             Ok(res) => {
