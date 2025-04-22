@@ -13,7 +13,10 @@ pub struct TextMatcher {
     patterns: Vec<String>,
     ac: AhoCorasick,
     max_pattern_len: usize,
+    #[pyo3(get)]
     overlapping: bool,
+    #[pyo3(get)]
+    case_insensitive: bool,
 }
 
 #[pymethods]
@@ -51,6 +54,7 @@ impl TextMatcher {
             ac,
             max_pattern_len,
             overlapping: overlapping_value,
+            case_insensitive: case_insensitive_value,
         })
     }   
 
