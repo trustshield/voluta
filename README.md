@@ -13,43 +13,10 @@ Built with Rust for blazing fast processing.
 - Case insensitive matching
 - Support for overlapping pattern matches
 
-## Installation
-
-### Prerequisites
-
-- Rust (latest stable)
-- Python 3.13
-- uv
-- just
-
-### Building from source
+## Using in your project
 
 ```bash
-# Clone repository
-git clone https://github.com/trustshield/voluta.git && cd voluta
-
-# Setup environment
-uv venv
-source .venv/bin/activate
-uv sync --dev
-
-# Build
-just build
-
-# Test
-just test
-```
-
-### Installing the wheel
-
-After building, you can install the wheel in another project:
-
-```bash
-# The wheel file will be in target/wheels/
-pip install /path/to/voluta/target/wheels/voluta-*.whl
-
-# Alternatively, install directly from GitHub
-pip install git+https://github.com/trustshield/voluta.git
+pip install voluta
 ```
 
 ## Usage
@@ -123,6 +90,45 @@ text = "Hello WORLD"
 matcher = voluta.TextMatcher(["hello", "world"])  # Will match both Hello and WORLD
 # Disable case insensitivity if needed
 matcher = voluta.TextMatcher(["hello", "world"], case_insensitive=False)  # Will only match exact case
+```
+
+## Installation
+
+### Prerequisites
+
+- Rust (latest stable)
+- Python 3.13
+- uv
+- just
+
+### Building from source
+
+```bash
+# Clone repository
+git clone https://github.com/trustshield/voluta.git && cd voluta
+
+# Setup environment
+uv venv
+source .venv/bin/activate
+uv sync --dev
+
+# Build
+just build
+
+# Test
+just test
+```
+
+### Installing the wheel
+
+After building, you can install the wheel in another project:
+
+```bash
+# The wheel file will be in target/wheels/
+pip install /path/to/voluta/target/wheels/voluta-*.whl
+
+# Alternatively, install directly from GitHub
+pip install git+https://github.com/trustshield/voluta.git
 ```
 
 ## Performance
