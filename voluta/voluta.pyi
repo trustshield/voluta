@@ -96,3 +96,22 @@ class TextMatcher:
             List of (start_index, end_index, matched_pattern) tuples
         """
         ...
+
+    def match_file_stream(
+        self, path: str, buffer_size: Optional[int] = None
+    ) -> List[Tuple[int, int, str]]:
+        """
+        Stream-based file matching that processes the file in chunks.
+        Useful for very large files or when memory efficiency is important.
+
+        Args:
+            path: Path to the file to match
+            buffer_size: Size of the buffer to use for streaming (default: 8MB)
+
+        Returns:
+            List of (byte_offset, start_index, matched_pattern) tuples
+
+        Raises:
+            IOError: If the file cannot be read
+        """
+        ...

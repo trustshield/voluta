@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, BufRead, Result};
+use std::io::{BufReader, BufRead, Result, Read};
 use std::path::Path;
 use pyo3::prelude::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, PatternID};
@@ -123,6 +123,23 @@ impl TextMatcher {
         }
         
         matches
+    }
+
+    /// Stream-based file matching that processes the file in chunks
+    /// Useful for very large files or when memory efficiency is important
+    /// Returns a list of (byte_offset, start_index, end_index, matched_pattern) tuples
+    #[pyo3(signature = (path, buffer_size=None))]
+    pub fn match_file_stream(&self, path: String, buffer_size: Option<usize>) -> PyResult<Vec<(usize, usize, String)>> {
+        match self.match_file_stream_impl(&path, buffer_size.unwrap_or(8 * 1024 * 1024)) {
+            Ok(res) => {
+                // Convert the internal pattern indices to actual pattern strings only at the end
+                let string_matches = res.into_iter()
+                    .map(|(start, end, pattern_idx)| (start, end, self.patterns[pattern_idx.as_usize()].clone()))
+                    .collect();
+                Ok(string_matches)
+            },
+            Err(e) => Err(pyo3::exceptions::PyIOError::new_err(e.to_string())),
+        }
     }
 }
 
@@ -306,6 +323,80 @@ impl TextMatcher {
         let unique_matches = final_result_set.into_iter().collect();
         
         Ok(unique_matches)
+    }
+
+    fn match_file_stream_impl(&self, path: &str, buffer_size: usize) -> Result<Vec<(usize, usize, PatternID)>> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::with_capacity(buffer_size, file);
+        let mut matches = Vec::new();
+        let mut offset = 0;
+        let mut buffer = vec![0; buffer_size];
+        
+        // Use a set to deduplicate matches that might be found in overlapping regions
+        let mut match_set = HashSet::new();
+        
+        // Calculate overlap size based on max pattern length
+        let overlap = self.max_pattern_len.saturating_sub(1);
+        
+        // Keep track of the last chunk to handle overlap
+        let mut last_chunk = Vec::new();
+        
+        loop {
+            let bytes_read = reader.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            
+            // Process the current chunk
+            let chunk = &buffer[..bytes_read];
+            
+            // Combine with last chunk's overlap if we have one
+            let combined_chunk = if !last_chunk.is_empty() {
+                let mut combined = last_chunk.clone();
+                combined.extend_from_slice(chunk);
+                combined
+            } else {
+                chunk.to_vec()
+            };
+            
+            if self.overlapping {
+                for mat in self.ac.find_overlapping_iter(&combined_chunk) {
+                    let pattern_idx = mat.pattern();
+                    let start_idx = offset + mat.start();
+                    let end_idx = offset + mat.end();
+                    
+                    // Insert into set to deduplicate
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
+                        matches.push(match_tuple);
+                    }
+                }
+            } else {
+                for mat in self.ac.find_iter(&combined_chunk) {
+                    let pattern_idx = mat.pattern();
+                    let start_idx = offset + mat.start();
+                    let end_idx = offset + mat.end();
+                    
+                    // Insert into set to deduplicate
+                    let match_tuple = (start_idx, end_idx, pattern_idx);
+                    if match_set.insert(match_tuple) {
+                        matches.push(match_tuple);
+                    }
+                }
+            }
+            
+            // Store the overlap for the next iteration
+            if bytes_read > overlap {
+                last_chunk = chunk[bytes_read - overlap..].to_vec();
+            } else {
+                last_chunk = chunk.to_vec();
+            }
+            
+            // Move the offset for the next chunk
+            offset += bytes_read;
+        }
+        
+        Ok(matches)
     }
 }
 
