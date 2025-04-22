@@ -7,7 +7,7 @@ name = "voluta"
 version = "0.1.1"
 description = "A high-performance text pattern matching library built with Rust"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
     { name = "utils.rs", email = "dev@utils.rs" }

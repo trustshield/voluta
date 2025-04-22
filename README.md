@@ -97,7 +97,7 @@ matcher = voluta.TextMatcher(["hello", "world"], case_insensitive=False)  # Will
 ### Prerequisites
 
 - Rust (latest stable)
-- Python 3.13
+- Python 3.12
 - uv
 - just
 
