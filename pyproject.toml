@@ -7,7 +7,7 @@ name = "voluta"
 version = "0.1.6"
 description = "A high-performance text pattern matching library built with Rust"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "utils.rs", email = "dev@utils.rs" }
@@ -19,6 +19,7 @@ classifiers = [
     "Topic :: Text Processing :: General",
 ]
 dependencies = [
+    "exceptiongroup>=1.2.2",
     "maturin>=1.8.3",
 ]
 
