@@ -92,6 +92,152 @@ matcher = voluta.TextMatcher(["hello", "world"])  # Will match both Hello and WO
 matcher = voluta.TextMatcher(["hello", "world"], case_insensitive=False)  # Will only match exact case
 ```
 
+### Whole word matching
+
+The whole word matching feature allows you to find patterns only when they appear as complete words, not as substrings within other words. This is particularly useful for finding specific terms, identifiers, or keywords without false positives.
+
+#### What are Word Boundaries?
+
+Word characters are defined as: `[a-zA-Z0-9_]` (letters, digits, and underscores)
+
+Word boundaries occur at:
+- Start/end of text
+- Between word and non-word characters  
+- Punctuation marks: `. , ; : ! ? ( ) [ ] { } ' "`
+- Whitespace: spaces, tabs, newlines
+- Special characters: `@ # $ % ^ & * + - = | \ / ~ <>`
+
+#### Basic Example
+
+```python
+from voluta import TextMatcher
+
+# Without whole word matching (default behavior)
+patterns = ["cat", "test"]
+matcher = TextMatcher(patterns, whole_word=False)
+data = b"The cat in the scatter test and testing"
+matches = matcher.match_bytes(data)
+# Finds: "cat" (2 times: in "cat" and "scatter"), "test" (2 times: in "test" and "testing")
+
+# With whole word matching
+matcher_word = TextMatcher(patterns, whole_word=True)  
+matches_word = matcher_word.match_bytes(data)
+# Finds: "cat" (1 time: only the standalone word), "test" (1 time: only the standalone word)
+```
+
+#### Programming Use Cases
+
+**Finding function names without false positives:**
+
+```python
+patterns = ["malloc", "free", "printf"]
+matcher = TextMatcher(patterns, whole_word=True, case_insensitive=False)
+
+code = b"""
+void* malloc(size_t size);
+char* smalloc_wrapper();  // won't match "malloc"
+free(ptr);
+printf("Hello");
+sprintf(buf, "test");     // won't match "printf"
+"""
+
+matches = matcher.match_bytes(code)
+# Only finds actual function calls: "malloc", "free", "printf"
+```
+
+**Variable name detection:**
+
+```python
+patterns = ["user", "config", "data"]
+matcher = TextMatcher(patterns, whole_word=True)
+
+code = b"""
+user = get_user()         # ✓ matches "user"
+user_name = "john"        # ✗ doesn't match (connected by underscore)
+configure_data()          # ✗ doesn't match ("config" inside "configure")
+process(data)             # ✓ matches "data"
+"""
+```
+
+#### Natural Language Processing
+
+**Stopword detection:**
+
+```python
+stopwords = ["the", "and", "or", "in", "on", "at"]
+matcher = TextMatcher(stopwords, whole_word=True, case_insensitive=True)
+
+text = b"The cat and dog are in the garden"
+matches = matcher.match_bytes(text)
+# Correctly identifies: "The", "and", "are", "in", "the"
+# Won't match "the" inside words like "gather" or "other"
+```
+
+#### Special Character Handling
+
+**API/technical terms:**
+
+```python
+patterns = ["API", "URL", "HTTP"]
+matcher = TextMatcher(patterns, whole_word=True)
+
+# These WILL match (special characters create boundaries):
+text1 = b"REST API endpoints"          # ✓ "API"
+text2 = b"The API-URL mapping"         # ✓ "API" and "URL" 
+text3 = b"HTTP/1.1 protocol"          # ✓ "HTTP"
+text4 = b"Check API() function"        # ✓ "API"
+
+# These will NOT match (connected by word characters):
+text5 = b"RAPID development"           # ✗ "API" inside "RAPID"
+text6 = b"The API_VERSION constant"    # ✗ "API" connected by underscore
+```
+
+#### Email/Domain matching
+
+```python
+patterns = ["com", "org", "net"]
+matcher = TextMatcher(patterns, whole_word=True, case_insensitive=True)
+
+text = b"Visit example.com or contact@university.org for info"
+matches = matcher.match_bytes(text)
+# Finds: "com", "org" as complete domain extensions
+# Won't match "com" inside words like "complete" or "common"
+```
+
+#### Performance Considerations
+
+Whole word matching adds a small overhead as it checks character boundaries for each match. For maximum performance on large datasets where you don't need word boundaries, keep the default `whole_word=False`.
+
+```python
+# Fastest (no boundary checking)
+matcher = TextMatcher(patterns, whole_word=False)
+
+# Slightly slower but more precise
+matcher = TextMatcher(patterns, whole_word=True)
+```
+
+#### Combining with Other Options
+
+Whole word matching works seamlessly with other TextMatcher features:
+
+```python
+# Case-insensitive whole word matching
+matcher = TextMatcher(
+    patterns=["Error", "Warning", "Info"],
+    whole_word=True,
+    case_insensitive=True,     # Matches "ERROR", "error", "Error"
+    overlapping=True
+)
+
+# Find overlapping whole words
+patterns = ["test", "testing", "est"]
+matcher = TextMatcher(patterns, whole_word=True, overlapping=True)
+text = b"The test and testing phase includes est methods"
+# Finds all three as separate whole words
+```
+
+
+
 ## Installation
 
 ### Prerequisites

@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 class TextMatcher:
     """A high-performance text pattern matcher using Aho-Corasick algorithm."""
@@ -9,11 +9,15 @@ class TextMatcher:
     case_insensitive: bool
     """Whether the pattern matching is case insensitive."""
 
+    whole_word: bool
+    """Whether to match only whole words at word boundaries."""
+
     def __init__(
         self,
         patterns: List[str],
         overlapping: Optional[bool] = True,
         case_insensitive: Optional[bool] = True,
+        whole_word: Optional[bool] = False,
     ) -> None:
         """
         Create a new TextMatcher instance.
@@ -22,6 +26,7 @@ class TextMatcher:
             patterns: List of string patterns to match
             overlapping: Whether to find overlapping matches (default: True)
             case_insensitive: Whether the pattern matching is case insensitive (default: True)
+            whole_word: Whether to match only whole words at word boundaries (default: False)
 
         Raises:
             ValueError: If pattern set is empty after filtering

@@ -17,16 +17,19 @@ pub struct TextMatcher {
     overlapping: bool,
     #[pyo3(get)]
     case_insensitive: bool,
+    #[pyo3(get)]
+    whole_word: bool,
 }
 
 #[pymethods]
 impl TextMatcher {
     #[new]
-    #[pyo3(signature = (patterns, overlapping=None, case_insensitive=None))]
+    #[pyo3(signature = (patterns, overlapping=None, case_insensitive=None, whole_word=None))]
     pub fn new(
         patterns: Vec<String>,
         overlapping: Option<bool>,
         case_insensitive: Option<bool>,
+        whole_word: Option<bool>,
     ) -> PyResult<Self> {
         // Filter out empty patterns
         let filtered_patterns: Vec<String> =
@@ -44,6 +47,7 @@ impl TextMatcher {
 
         let overlapping_value = overlapping.unwrap_or(true);
         let case_insensitive_value = case_insensitive.unwrap_or(true);
+        let whole_word_value = whole_word.unwrap_or(false);
 
         let ac = AhoCorasickBuilder::new()
             .kind(Some(AhoCorasickKind::DFA))
@@ -57,6 +61,7 @@ impl TextMatcher {
             max_pattern_len,
             overlapping: overlapping_value,
             case_insensitive: case_insensitive_value,
+            whole_word: whole_word_value,
         })
     }
 
@@ -131,11 +136,15 @@ impl TextMatcher {
                 let pattern_idx = mat.pattern();
                 let start_idx = mat.start();
                 let end_idx = mat.end();
-                matches.push((
-                    start_idx,
-                    end_idx,
-                    self.patterns[pattern_idx.as_usize()].clone(),
-                ));
+
+                // Check word boundary if whole_word is enabled
+                if self.is_word_boundary_match(data, start_idx, end_idx) {
+                    matches.push((
+                        start_idx,
+                        end_idx,
+                        self.patterns[pattern_idx.as_usize()].clone(),
+                    ));
+                }
             }
         } else {
             // Use the standard iterator
@@ -143,11 +152,15 @@ impl TextMatcher {
                 let pattern_idx = mat.pattern();
                 let start_idx = mat.start();
                 let end_idx = mat.end();
-                matches.push((
-                    start_idx,
-                    end_idx,
-                    self.patterns[pattern_idx.as_usize()].clone(),
-                ));
+
+                // Check word boundary if whole_word is enabled
+                if self.is_word_boundary_match(data, start_idx, end_idx) {
+                    matches.push((
+                        start_idx,
+                        end_idx,
+                        self.patterns[pattern_idx.as_usize()].clone(),
+                    ));
+                }
             }
         }
 
@@ -203,6 +216,35 @@ impl TextMatcher {
 }
 
 impl TextMatcher {
+    /// Check if a character is a word character (alphanumeric or underscore)
+    fn is_word_char(c: u8) -> bool {
+        c.is_ascii_alphanumeric() || c == b'_'
+    }
+
+    /// Check if a match is at word boundaries
+    fn is_word_boundary_match(&self, data: &[u8], start: usize, end: usize) -> bool {
+        if !self.whole_word {
+            return true;
+        }
+
+        // Check character before the match
+        let before_is_word = if start > 0 {
+            Self::is_word_char(data[start - 1])
+        } else {
+            false // Beginning of text is considered a word boundary
+        };
+
+        // Check character after the match
+        let after_is_word = if end < data.len() {
+            Self::is_word_char(data[end])
+        } else {
+            false // End of text is considered a word boundary
+        };
+
+        // Match is at word boundary if neither before nor after are word characters
+        !before_is_word && !after_is_word
+    }
+
     fn match_file_impl(&self, path: &str) -> Result<Vec<(usize, usize, usize, String)>> {
         let f = File::open(Path::new(path))?;
         let mut reader = BufReader::new(f);
@@ -218,24 +260,32 @@ impl TextMatcher {
                     let pattern_idx = mat.pattern();
                     let start_idx = mat.start();
                     let end_idx = mat.end();
-                    matches.push((
-                        line_number,
-                        start_idx,
-                        end_idx,
-                        self.patterns[pattern_idx.as_usize()].clone(),
-                    ));
+
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(buffer.as_bytes(), start_idx, end_idx) {
+                        matches.push((
+                            line_number,
+                            start_idx,
+                            end_idx,
+                            self.patterns[pattern_idx.as_usize()].clone(),
+                        ));
+                    }
                 }
             } else {
                 for mat in self.ac.find_iter(&buffer) {
                     let pattern_idx = mat.pattern();
                     let start_idx = mat.start();
                     let end_idx = mat.end();
-                    matches.push((
-                        line_number,
-                        start_idx,
-                        end_idx,
-                        self.patterns[pattern_idx.as_usize()].clone(),
-                    ));
+
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(buffer.as_bytes(), start_idx, end_idx) {
+                        matches.push((
+                            line_number,
+                            start_idx,
+                            end_idx,
+                            self.patterns[pattern_idx.as_usize()].clone(),
+                        ));
+                    }
                 }
             }
 
@@ -278,10 +328,13 @@ impl TextMatcher {
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(&mmap, start_idx, end_idx) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             } else {
@@ -290,10 +343,13 @@ impl TextMatcher {
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(&mmap, start_idx, end_idx) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             }
@@ -351,6 +407,7 @@ impl TextMatcher {
         // Get references to instance fields for the closure
         let ac = &self.ac;
         let overlapping = self.overlapping;
+        let whole_word = self.whole_word;
 
         // Process chunks in parallel and collect all matches with per-thread deduplication
         // Each thread returns a pre-deduplicated set of matches, which reduces the final deduplication work
@@ -366,7 +423,30 @@ impl TextMatcher {
                         let start_idx = start + mat.start();
                         let end_idx = start + mat.end();
 
-                        local_match_set.insert((start_idx, end_idx, pattern_idx));
+                        // Check word boundary if whole_word is enabled
+                        let is_word_match = if whole_word {
+                            // Check character before the match
+                            let before_is_word = if start_idx > 0 {
+                                Self::is_word_char(mmap[start_idx - 1])
+                            } else {
+                                false
+                            };
+
+                            // Check character after the match
+                            let after_is_word = if end_idx < mmap.len() {
+                                Self::is_word_char(mmap[end_idx])
+                            } else {
+                                false
+                            };
+
+                            !before_is_word && !after_is_word
+                        } else {
+                            true
+                        };
+
+                        if is_word_match {
+                            local_match_set.insert((start_idx, end_idx, pattern_idx));
+                        }
                     }
                 } else {
                     for mat in ac.find_iter(chunk) {
@@ -374,7 +454,30 @@ impl TextMatcher {
                         let start_idx = start + mat.start();
                         let end_idx = start + mat.end();
 
-                        local_match_set.insert((start_idx, end_idx, pattern_idx));
+                        // Check word boundary if whole_word is enabled
+                        let is_word_match = if whole_word {
+                            // Check character before the match
+                            let before_is_word = if start_idx > 0 {
+                                Self::is_word_char(mmap[start_idx - 1])
+                            } else {
+                                false
+                            };
+
+                            // Check character after the match
+                            let after_is_word = if end_idx < mmap.len() {
+                                Self::is_word_char(mmap[end_idx])
+                            } else {
+                                false
+                            };
+
+                            !before_is_word && !after_is_word
+                        } else {
+                            true
+                        };
+
+                        if is_word_match {
+                            local_match_set.insert((start_idx, end_idx, pattern_idx));
+                        }
                     }
                 }
 
@@ -446,10 +549,13 @@ impl TextMatcher {
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(&combined_chunk, mat.start(), mat.end()) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             } else {
@@ -458,10 +564,13 @@ impl TextMatcher {
                     let start_idx = offset + mat.start();
                     let end_idx = offset + mat.end();
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(&combined_chunk, mat.start(), mat.end()) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             }
@@ -517,10 +626,13 @@ impl TextMatcher {
                         offset + mat.end()
                     };
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(data, start_idx, end_idx) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             } else {
@@ -537,10 +649,13 @@ impl TextMatcher {
                         offset + mat.end()
                     };
 
-                    // Insert into set to deduplicate
-                    let match_tuple = (start_idx, end_idx, pattern_idx);
-                    if match_set.insert(match_tuple) {
-                        matches.push(match_tuple);
+                    // Check word boundary if whole_word is enabled
+                    if self.is_word_boundary_match(data, start_idx, end_idx) {
+                        // Insert into set to deduplicate
+                        let match_tuple = (start_idx, end_idx, pattern_idx);
+                        if match_set.insert(match_tuple) {
+                            matches.push(match_tuple);
+                        }
                     }
                 }
             }
